@@ -1,0 +1,8 @@
+[package]
+
+name = "timeseries-databases"
+version = "0.0.1"
+authors = ["Benjamin San Souci <benjamin.sansouci@gmail.com>"]
+
+[dependencies.postgres]
+git = "https://github.com/sfackler/rust-postgres"

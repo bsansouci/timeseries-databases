@@ -1,0 +1,43 @@
+[root]
+name = "timeseries-databases"
+version = "0.0.1"
+dependencies = [
+ "postgres 0.0.0 (git+https://github.com/sfackler/rust-postgres#167b9d0209b69e89301193f4e8f597583601dc6c)",
+]
+
+[[package]]
+name = "openssl"
+version = "0.0.0"
+source = "git+https://github.com/sfackler/rust-openssl#1e706b8ef4d4344b5297b90bcd430cc96f40fb39"
+
+[[package]]
+name = "phf"
+version = "0.0.0"
+source = "git+https://github.com/sfackler/rust-phf#f585e4c88f1cd327e0b409c60deb51cd3f3d6b15"
+dependencies = [
+ "xxhash 0.0.1 (git+https://github.com/Jurily/rust-xxhash#7e4174e780af0cfb29a5e53ede0b987adca16396)",
+]
+
+[[package]]
+name = "phf_mac"
+version = "0.0.0"
+source = "git+https://github.com/sfackler/rust-phf#f585e4c88f1cd327e0b409c60deb51cd3f3d6b15"
+dependencies = [
+ "xxhash 0.0.1 (git+https://github.com/Jurily/rust-xxhash#7e4174e780af0cfb29a5e53ede0b987adca16396)",
+]
+
+[[package]]
+name = "postgres"
+version = "0.0.0"
+source = "git+https://github.com/sfackler/rust-postgres#167b9d0209b69e89301193f4e8f597583601dc6c"
+dependencies = [
+ "openssl 0.0.0 (git+https://github.com/sfackler/rust-openssl#1e706b8ef4d4344b5297b90bcd430cc96f40fb39)",
+ "phf 0.0.0 (git+https://github.com/sfackler/rust-phf#f585e4c88f1cd327e0b409c60deb51cd3f3d6b15)",
+ "phf_mac 0.0.0 (git+https://github.com/sfackler/rust-phf#f585e4c88f1cd327e0b409c60deb51cd3f3d6b15)",
+]
+
+[[package]]
+name = "xxhash"
+version = "0.0.1"
+source = "git+https://github.com/Jurily/rust-xxhash#7e4174e780af0cfb29a5e53ede0b987adca16396"
+
