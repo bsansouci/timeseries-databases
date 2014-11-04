@@ -6,7 +6,7 @@ var PORT = 8001;
 var client = new net.Socket();
 client.connect(PORT, HOST, function() {
   console.log('CONNECTED TO: ' + HOST + ':' + PORT);
-  writeString(cilent, 'house1.firstfloor.sensor1:new_value');
+  writeString(client, 'house1.firstfloor.sensor1:new_value');
 });
 
 client.on('data', function(data) {
