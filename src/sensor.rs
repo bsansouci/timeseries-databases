@@ -25,7 +25,7 @@ fn main() {
   let mut socket: TcpStream = TcpStream::connect("127.0.0.1:8000").unwrap();
   send_str(namespace, &mut socket).unwrap();
 
-  let v: Vec<f64> = rng.gen_iter::<f64>().take(100).collect();
+  let v: Vec<f64> = rng.gen_iter::<f64>().take(10).collect();
   // Iterate 100000 times (long enough to test out things)
   for i in v.iter() {
     // Start a one second timer

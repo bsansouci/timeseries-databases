@@ -168,7 +168,7 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Arc<RWLock<HashMap<String, Rin
 
   match unlocked_map.get_mut(&wanted_sensor) {
     Some(list) => {
-      println!("New hook for s name {}", wanted_sensor);
+      println!("New hook for sensor `{}`", wanted_sensor);
       list.push_back(stream.clone());
     }
     None => println!("Sorry, the sensor `{}` isn't available.", wanted_sensor)

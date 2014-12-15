@@ -4,23 +4,33 @@ var HOST = '127.0.0.1';
 var PORT = 8001;
 
 var client = new net.Socket();
+var sensorName = 'sensor1';
+var namespace = 'house1.firstfloor.' + sensorName;
+var command = 'new_value';
 client.connect(PORT, HOST, function() {
   console.log('CONNECTED TO: ' + HOST + ':' + PORT);
-  writeString(client, 'house1.firstfloor.sensor1:new_value');
+  writeString(client, namespace + ':' + command);
 });
 
 client.on('data', function(data) {
   console.log('DATA: ', data.toString());
-  if(data.toString().split(":")[1] === "closed") {
-    console.log("Closing connection because sensor is down");
-    client.destroy();
-  }
+  data.toString()
+      .split(sensorName + ":")
+      .slice(1)
+      .map(processData);
 });
 
 client.on('close', function() {
   console.log('Connection closed');
   client.destroy();
 });
+
+function processData(data) {
+  if(data === "closed") {
+    console.log("Closing connection because sensor is down");
+    client.destroy();
+  }
+}
 
 function writeString(client, str) {
   var buf = new Buffer(4);

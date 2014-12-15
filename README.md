@@ -8,22 +8,19 @@ For this to work you'll need a postgreSQL database running on port 5432 with a d
 Cargo isn't fully set up yet.
 
 # How to build
-First start by making a subfolder called target
-```
-mkdir target
-```
-
-Now compile the main server and the fake sensor
-```
-rustc -L libs src/main.rs -o target/main && rustc -L libs src/sensor.rs -o target/sensor
+To build and run the main server simply run
+```bash
+cargo build
 ```
 
-Now run the server in one terminal
+To build the fake sensor run
 ```
-target/main
+mkdir sensors
+
+rustc src/sensor.rs -o sensors/sensor
 ```
 
 And run the fake sensor in another terminal
 ```
-target/sensor "some.namespacing.goes.here.sensor1"
+sensors/sensor "house1.firstfloor.sensor1"
 ```
