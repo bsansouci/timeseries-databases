@@ -11,6 +11,10 @@ client.connect(PORT, HOST, function() {
 
 client.on('data', function(data) {
   console.log('DATA: ', data.toString());
+  if(data.toString().split(":")[1] === "closed") {
+    console.log("Closing connection because sensor is down");
+    client.destroy();
+  }
 });
 
 client.on('close', function() {
