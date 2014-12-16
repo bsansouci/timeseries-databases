@@ -10,7 +10,7 @@ Cargo isn't fully set up yet.
 # How to build
 To build and run the main server simply run
 ```bash
-cargo build
+cargo run
 ```
 
 To build the fake sensor run
