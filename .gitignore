@@ -1,3 +1,5 @@
 target/
 rust-postgres/
 sensors/
+rust-nightly/
+rust-nightly.tar.gz

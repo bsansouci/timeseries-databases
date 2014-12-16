@@ -7,9 +7,11 @@ use std::io::{TcpListener, TcpStream};
 
 use std::collections::HashMap;
 use std::collections::RingBuf;
-use std::sync::{RWLock, Arc};
+use std::sync::{Mutex, Arc};
 
 use time::Timespec;
+use std::io::timer;
+use std::time::Duration;
 
 use postgres::{Connection, SslMode};
 use postgres::types::array::{ArrayBase};
@@ -26,36 +28,47 @@ struct NamespacePacket {
   is_sensor: bool
 }
 
+struct Hook {
+  channel: TcpStream,
+  is_connected: bool,
+  state: Vec<f64>,
+  command: String
+}
+
+type Eric = Arc<Mutex<HashMap<String, RingBuf<Hook>>>>;
+
 fn read_str(stream: &mut TcpStream) -> String {
   let length = stream.read_be_u32().unwrap();
 
   let mut t: Vec<u8> = Vec::from_elem(length.to_uint().unwrap(), 0);
   let tmp: &mut [u8] = t.as_mut_slice();
-  stream.read(tmp);
+
+  stream.read(tmp).unwrap();
+
   return str::from_utf8(tmp).expect("unable to parse buffer to a utf8 string").to_string();
 }
 
-fn create_namespace(ns: Sender<NamespacePacket>, namespace: &Vec<&str>) {
-  let mut not_first = false;
-  let mut prev: &str = "ERROR";
-  for n in namespace.iter() {
-    if not_first {
-      ns.send(NamespacePacket {
-        parent: prev.to_string(),
-        children: n.to_string(),
-        is_sensor: false
-      });
-    }
-    prev = *n;
-    not_first = true;
-  }
+// fn create_namespace(ns: Sender<NamespacePacket>, namespace: &Vec<&str>) {
+//   let mut not_first = false;
+//   let mut prev: &str = "ERROR";
+//   for n in namespace.iter() {
+//     if not_first {
+//       ns.send(NamespacePacket {
+//         parent: prev.to_string(),
+//         children: n.to_string(),
+//         is_sensor: false
+//       });
+//     }
+//     prev = *n;
+//     not_first = true;
+//   }
 
-  ns.send(NamespacePacket {
-    parent: "".to_string(),
-    children: namespace[namespace.len() - 1].to_string(),
-    is_sensor: true
-  });
-}
+//   ns.send(NamespacePacket {
+//     parent: "".to_string(),
+//     children: namespace[namespace.len() - 1].to_string(),
+//     is_sensor: true
+//   });
+// }
 
 // fn send_data_to_db(db: &Sender<SensorPacket>, value: f64, name: &String) {
 //   db.send(SensorPacket {
@@ -78,7 +91,7 @@ fn create_namespace(ns: Sender<NamespacePacket>, namespace: &Vec<&str>) {
 //     match data {
 //       Some(x) => {
 //         println!("Hook-> {}: {}", x.name, x.value)
-//         stream.write(format!("{}:{}", x.name, x.value).as_bytes());
+//         stream.lock(format!("{}:{}", x.name, x.value).as_bytes());
 //       },
 //       None => continue
 //     }
@@ -91,64 +104,183 @@ fn create_namespace(ns: Sender<NamespacePacket>, namespace: &Vec<&str>) {
 //     //     Some(x) => format!("{:s}", x.to_string()).as_bytes(),
 //     //     None    => format!("{}", s.value).as_bytes(),
 //     //   };
-//     //   stream.write(v)
+//     //   stream.lock(v)
 //     // }
-//     // stream.write(format!("{:s}", mainChannel.recv().to_string()).as_bytes());
+//     // stream.lock(format!("{:s}", mainChannel.recv().to_string()).as_bytes());
 //   // }
 
 //   drop(stream)
 // }
 
-fn add_sensor(all_hooks: &Arc<RWLock<HashMap<String, RingBuf<TcpStream>>>>, name: String) {
-  let mut w = all_hooks.write();
+fn add_sensor(all_hooks: &Eric, name: String) -> bool {
+  let mut w = all_hooks.lock();
+  if w.contains_key(&name) {
+    println!("Sensor with name `{}` already exists.", name);
+    return false;
+  }
+
   w.insert(name, RingBuf::new());
+  return true;
 }
 
-fn send_to_all_hooks(all_hooks: &Arc<RWLock<HashMap<String, RingBuf<TcpStream>>>>, name: String, message: String) {
-  let mut w = all_hooks.write();
-  let m = message.as_bytes();
+fn min(hook: &mut Hook, x: f64) -> f64 {
+  if hook.state.len() == 0 {
+    hook.state.push(x);
+  }
+
+  if hook.state[0] > x {
+    hook.state[0] = x;
+  }
+
+  return hook.state[0];
+}
+
+fn max(hook: &mut Hook, x: f64) -> f64 {
+  if hook.state.len() == 0 {
+    hook.state.push(x);
+  }
+
+  if hook.state[0] < x {
+    hook.state[0] = x;
+  }
+
+  return hook.state[0];
+}
+
+// fn mean(hook: &mut Hook, x: f64) -> f64 {
+//   if hook.state.len() == 0 {
+//     hook.state.push(x);
+//     hook.state.push(1.0);
+//     return hook.state[0];
+//   }
+
+//   hook.state[0] = (hook.state[0] * hook.state[1] + x) / (hook.state[1] + 1.0);
+//   hook.state[1] += 1.0;
+
+//   return hook.state[0];
+// }
+
+// Make sure this doesn't overflow
+// This can be done by pushing new nodes inside the state when hook.state[0]
+// becomes too big. Then we return the sum of all the nodes inside the state
+// vector.
+fn count(hook: &mut Hook, x: f64) -> f64 {
+  if hook.state.len() == 0 {
+    hook.state.push(0.0);
+    return hook.state[0];
+  }
+
+  hook.state[0] += 1.0;
+
+  return hook.state[0];
+}
+
+fn sum(hook: &mut Hook, x: f64) -> f64 {
+  if hook.state.len() == 0 {
+    hook.state.push(x);
+    return hook.state[0];
+  }
+
+  hook.state[0] += x;
+
+  return hook.state[0];
+}
+
+fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
+  let mut w = all_hooks.lock();
+
   match w.get_mut(&name) {
-    Some(list) => {
-      for e in list.iter_mut() {
-        e.write(m);
+    Some(buffer) => {
+      for e in buffer.iter_mut() {
+        if e.is_connected {
+          let value = match e.command.as_slice() {
+            "new_value" => x,
+            "min"       => min(e, x),
+            "max"       => max(e, x),
+            // "mean"       => mean(e, x),
+            "sum"       => sum(e, x),
+            "count"       => count(e, x),
+            _ => 0.0,
+          };
+
+          match e.channel.write(format!("{}", value).as_bytes()) {
+            Ok(_) => (),
+            Err(err) => {
+              println!("Hook probably disconnected, error: {}", err);
+              e.is_connected = false;
+            }
+          }
+        }
       }
     }
     None => println!("Problem here.")
   }
 }
 
-fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<NamespacePacket>, all_hooks: Arc<RWLock<HashMap<String, RingBuf<TcpStream>>>>) {
-  let namespace: String = read_str(&mut stream);
-  let str_split: Vec<&str> = namespace.as_slice().split_str(".").collect();
+fn send_to_all_hooks_str(all_hooks: &Eric, name: String, message: String) {
+  let mut w = all_hooks.lock();
+  let m = message.as_bytes();
 
+  match w.get_mut(&name) {
+    Some(buffer) => {
+      for e in buffer.iter_mut() {
+        if e.is_connected {
+          match e.channel.write(m) {
+            Ok(_) => (),
+            Err(err) => {
+              println!("Hook probably disconnected, error: {}", err);
+              e.is_connected = false;
+            }
+          }
+        }
+      }
+    }
+    None => println!("Problem here.")
+  }
+}
+
+fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<NamespacePacket>, all_hooks: Eric) {
+  let namespace: String = read_str(&mut stream);
+
+  // let str_split: Vec<&str> = namespace.as_slice().split_str(".").collect();
   // create_namespace(ns, &str_split);
+  // let sensor_name: String = str_split[str_split.len() - 1].to_string();
+
   println!("WARNING: please comment out line 95 of main.rs now that you've created the namespace for that specific sensor. If you don't, you'll get an error next time because it will try to insert a new row with the same key as a previous one.");
 
 
+  if !add_sensor(&all_hooks, namespace.clone()) {
+    drop(stream);
+    return;
+  }
 
-
-  let sensor_name: String = str_split[str_split.len() - 1].to_string();
-  let tmp = all_hooks.clone();
-  add_sensor(&all_hooks, sensor_name.clone());
-
-  println!("New sensor with name {}", sensor_name);
+  println!("New sensor with name {}", namespace);
 
   loop {
     let req = stream.read_be_f64();
-    // let req = str::from_utf8(buffer).expect("unable to parse buffer to a utf8 string").to_owned();
     match req {
       Ok(x) => {
         println!("HANDLE_SENSOR got {}", x);
+        // Save the data in the DB
         // db.send(SensorPacket {
         //   value: x,
         //   name: sensor_name.clone(),
         //   time_created: time::get_time()
         // });
-        send_to_all_hooks(&all_hooks, sensor_name.clone(), format!("{}:{}", sensor_name, x));
+
+        // Send the data to all the hooks
+        send_to_all_hooks_f64(&all_hooks, namespace.clone(), x);
       },
       Err(e) => {
-        println!("Error reading sensor data {}", e);
-        send_to_all_hooks(&all_hooks, sensor_name.clone(), format!("{}:closed", sensor_name));
+        println!("Error reading sensor data: {}", e);
+        send_to_all_hooks_str(&all_hooks, namespace.clone(), format!("closed"));
+
+        let remove = |n: &String| {
+          let mut unlocked_map = all_hooks.lock();
+          unlocked_map.remove(n);
+        };
+        remove(&namespace);
+
         break;
       },
     }
@@ -156,29 +288,37 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
   drop(stream);
 }
 
-fn handle_hook(mut stream: TcpStream, all_hooks: &Arc<RWLock<HashMap<String, RingBuf<TcpStream>>>>) {
+fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
   let req = read_str(&mut stream);
 
   let v: Vec<&str> = req.as_slice().split_str(":").collect();
-  let request = v[1];
-  let namespaces: Vec<&str> = v[0].split_str(".").collect();
-  let wanted_sensor = namespaces[namespaces.len() - 1].to_string();
 
-  let mut unlocked_map = all_hooks.write();
+  let command = v[1].to_string();
 
-  match unlocked_map.get_mut(&wanted_sensor) {
+  let namespaces: String = v[0].to_string();
+  // let splitted_namespace: Vec<&str> = v[0].split_str(".").collect();
+  // let wanted_sensor = namespaces[namespaces.len() - 1].to_string();
+
+  let mut unlocked_map = all_hooks.lock();
+
+  match unlocked_map.get_mut(&namespaces) {
     Some(list) => {
-      println!("New hook for sensor `{}`", wanted_sensor);
-      list.push_back(stream.clone());
+      println!("New hook for sensor `{}`", namespaces);
+      list.push_back(Hook {
+        channel: stream.clone(),
+        is_connected: true,
+        state: Vec::new(),
+        command: command.clone()
+      });
     }
-    None => println!("Sorry, the sensor `{}` isn't available.", wanted_sensor)
+    None => println!("Sorry, the sensor `{}` isn't available.", namespaces)
   }
 }
 
 fn main() {
   let (sql_sensor_sender, sql_sensor_receiver): (Sender<SensorPacket>, Receiver<SensorPacket>) = channel();
 
-  spawn(proc(){
+  spawn(proc() {
     let conn = Connection::connect("postgres://root:password@127.0.0.1:5432/local",&SslMode::None).unwrap();
     // conn.execute("CREATE TABLE tmp_table (
     //                 id              SERIAL PRIMARY KEY,
@@ -195,7 +335,7 @@ fn main() {
 
   let (namespace_sender, namespace_receiver): (Sender<NamespacePacket>, Receiver<NamespacePacket>) = channel();
 
-  spawn(proc(){
+  spawn(proc() {
     let conn = Connection::connect("postgres://root:password@127.0.0.1:5432/local",&SslMode::None).unwrap();
     // conn.execute("CREATE TABLE active_sensors (
     //                 sensor_name      VARCHAR PRIMARY KEY,
@@ -223,7 +363,7 @@ fn main() {
 
   // let queue: Queue<SensorPacket> = Queue::with_capacity(10);
   // let queue_clone = queue.clone();
-  let all_hooks_hookside = Arc::new(RWLock::new(HashMap::new()));
+  let all_hooks_hookside = Arc::new(Mutex::new(HashMap::new()));
 
   let all_hooks_sensorside = all_hooks_hookside.clone();
   spawn(proc() {
@@ -249,6 +389,28 @@ fn main() {
     }
   });
 
+  let all_hooks_cleanup = all_hooks_hookside.clone();
+  spawn(proc() {
+    loop {
+      timer::sleep(Duration::seconds(10));
+      let mut w = all_hooks_cleanup.lock();
+      println!("Cleaning up the disconnected hooks...");
+      for (_, e) in w.iter_mut() {
+        let mut i = 0;
+        let length = e.len();
+        while i < length {
+          if !e[i].is_connected {
+            let end = e.len() - 1;
+            e.swap(i, end);
+            e.pop_back();
+          }
+          i += 1;
+        }
+      }
+      println!("Done cleaning up");
+    }
+  });
+
   let hook_listener = TcpListener::bind("127.0.0.1:8001");
   let mut hook = hook_listener.listen();
   // accept connections and process them, spawning a new tasks for each one
@@ -260,10 +422,6 @@ fn main() {
       }
       Ok(stream) => {
         handle_hook(stream, &all_hooks_hookside);
-        // let q = queue.clone();
-        // spawn(proc() {
-        //   handle_hook(stream, q);
-        // });
       }
     }
   }

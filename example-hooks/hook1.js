@@ -5,8 +5,9 @@ var PORT = 8001;
 
 var client = new net.Socket();
 var sensorName = 'sensor1';
-var namespace = 'house1.firstfloor.' + sensorName;
-var command = 'new_value';
+
+var namespace = 'house.floor1.room1.' + sensorName;
+var command = 'count';
 client.connect(PORT, HOST, function() {
   console.log('CONNECTED TO: ' + HOST + ':' + PORT);
   writeString(client, namespace + ':' + command);
@@ -14,10 +15,7 @@ client.connect(PORT, HOST, function() {
 
 client.on('data', function(data) {
   console.log('DATA: ', data.toString());
-  data.toString()
-      .split(sensorName + ":")
-      .slice(1)
-      .map(processData);
+  processData(data.toString());
 });
 
 client.on('close', function() {

@@ -8,13 +8,14 @@ use std::os;
 use std::num::FloatMath;
 
 fn main() {
+  let mut dbname = "house.floor1.room1.sensor1".to_string();
+
   let args: Vec<String> = os::args();
-  if args.len() < 2 {
-    println!("Usage: target/sensor \"some.namespacing.goes.here.sensor1\"");
-    return;
+  if args.len() >= 2 {
+    dbname = args[1].clone();
   }
 
-  let dbname = args[1].clone();
+
   let namespace: &str = dbname.as_slice();
 
   let interval = Duration::milliseconds(1000);
