@@ -42,7 +42,10 @@ fn main() {
     // Send the random number through sockets to the server
     match socket.write_be_f64(num) {
       Ok(x) => x,
-      Err(x) => println!("{}", x),
+      Err(x) => {
+        println!("{}", x);
+        break;
+      },
     }
     println!("sent {}", num)
   }

@@ -249,7 +249,7 @@ fn add_to_state(state: &mut RingBuf<f64>, x: f64, window: uint) {
   }
 }
 
-fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
+fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64, time_stamp: time::Timespec) {
   let mut w = all_hooks.lock();
 
   match w.get_mut(&name) {
@@ -275,7 +275,7 @@ fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
             _ => x,
           };
 
-          match e.channel.write(format!("{}", value).as_bytes()) {
+          match e.channel.write(format!("{}.{}:{}", time_stamp.sec, time_stamp., value).as_bytes()) {
             Ok(_) => (),
             Err(err) => {
               println!("Hook probably disconnected, error: {}", err);
@@ -361,9 +361,11 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
 
   loop {
     let req = stream.read_be_f64();
+    let t = time::get_time();
+    // let time_stamp = t.sec * 1000000 + t.nsec as i64 / 1000;
     match req {
       Ok(x) => {
-        println!("{}:{}", namespace, x);
+        println!("{}.{}:{}:{}", t.sec, t.nsec, namespace, x);
         // Save the data in the DB
         // db.send(SensorPacket {
         //   value: x,
@@ -372,7 +374,7 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
         // });
 
         // Send the data to all the hooks
-        send_to_all_hooks_f64(&all_hooks, namespace.clone(), x);
+        send_to_all_hooks_f64(&all_hooks, namespace.clone(), x, t);
       },
       Err(e) => {
         println!("Error reading sensor data: {}", e);
@@ -403,7 +405,9 @@ fn handle_intermediary(mut all_receivers: Vec<Hook<Receiver<f64>>>, mut hook: Tc
     for r in all_receivers.iter_mut() {
       match r.channel.try_recv() {
         Ok(x) => {
-          match hook.write(format!("{}:{}", r.namespace.clone(), x).as_bytes()) {
+          let t = time::get_time();
+          // let time_stamp = t.sec * 1000 + t.nsec as i64 / 1000000;
+          match hook.write(format!("{}.{}:{}:{}", t.sec, t.nsec, r.namespace.clone(), x).as_bytes()) {
             Ok(_) => (),
             Err(err) => {
               println!("Hook probably disconnected, error: {}", err);

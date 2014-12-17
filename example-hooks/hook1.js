@@ -3,18 +3,21 @@ var net = require('net');
 var HOST = '127.0.0.1';
 var PORT = 8001;
 
-var client = new net.Socket();
 var sensorName = '*';
-
 var namespace = 'house.floor1.room1.' + sensorName;
-var command = 'new 5 new_value';
+var command = 'new 5 mean';
+var client = new net.Socket();
+
 client.connect(PORT, HOST, function() {
   console.log('CONNECTED TO: ' + HOST + ':' + PORT);
   writeString(client, namespace + ':' + command);
 });
 
 client.on('data', function(data) {
-  console.log('DATA: ', data.toString());
+  var str = data.toString();
+  var splitStr = str.split(":");
+  console.log("latency", Date.now() - parseInt(splitStr[0]), "sensor:", splitStr[1], "val", parseFloat(splitStr[2]));
+  // console.log('DATA:', data.toString());
   processData(data.toString());
 });
 

@@ -3,3 +3,6 @@ rust-postgres/
 sensors/
 rust-nightly/
 rust-nightly.tar.gz
+example-hooks/node_modules
+start_all_hooks.sh
+start_all_sensors.sh
