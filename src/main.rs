@@ -16,6 +16,8 @@ use std::time::Duration;
 use postgres::{Connection, SslMode};
 use postgres::types::array::{ArrayBase};
 
+use std::num::Float;
+
 struct SensorPacket {
   value: f64,
   name: String,
@@ -31,8 +33,9 @@ struct NamespacePacket {
 struct Hook {
   channel: TcpStream,
   is_connected: bool,
-  state: Vec<f64>,
-  command: String
+  state: RingBuf<f64>,
+  command: String,
+  window: uint
 }
 
 type Eric = Arc<Mutex<HashMap<String, RingBuf<Hook>>>>;
@@ -123,67 +126,153 @@ fn add_sensor(all_hooks: &Eric, name: String) -> bool {
   return true;
 }
 
-fn min(hook: &mut Hook, x: f64) -> f64 {
-  if hook.state.len() == 0 {
-    hook.state.push(x);
+fn min(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
+  if state.len() < window {
+    let mut min: f64 = x;
+    for e in state.iter() {
+      if *e < min {
+        min = *e;
+      }
+    }
+
+    state.push_back(x);
+    return min;
   }
 
-  if hook.state[0] > x {
-    hook.state[0] = x;
+  let mut min = x;
+  for e in state.iter() {
+    if *e < min {
+      min = *e;
+    }
   }
 
-  return hook.state[0];
+  state.pop_front();
+  state.push_back(x);
+  return min;
 }
 
-fn max(hook: &mut Hook, x: f64) -> f64 {
-  if hook.state.len() == 0 {
-    hook.state.push(x);
+fn max(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
+  if state.len() < window {
+    let mut max: f64 = x;
+    for e in state.iter() {
+      if *e > max {
+        max = *e;
+      }
+    }
+
+    state.push_back(x);
+    return max;
   }
 
-  if hook.state[0] < x {
-    hook.state[0] = x;
+  let mut max = x;
+  for e in state.iter() {
+    if *e > max {
+      max = *e;
+    }
   }
 
-  return hook.state[0];
+  state.pop_front();
+  state.push_back(x);
+  return max;
 }
 
-// fn mean(hook: &mut Hook, x: f64) -> f64 {
-//   if hook.state.len() == 0 {
-//     hook.state.push(x);
-//     hook.state.push(1.0);
-//     return hook.state[0];
-//   }
+fn mean(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
+  if state.len() < window {
+    state.push_back(x);
+  } else {
+    state.pop_front();
+    state.push_back(x);
+  }
 
-//   hook.state[0] = (hook.state[0] * hook.state[1] + x) / (hook.state[1] + 1.0);
-//   hook.state[1] += 1.0;
 
-//   return hook.state[0];
-// }
+  let mut sum = 0.0;
+  for e in state.iter() {
+    sum += *e;
+  }
+
+  let size: f64 = state.len() as f64;
+  return sum / size;
+}
 
 // Make sure this doesn't overflow
 // This can be done by pushing new nodes inside the state when hook.state[0]
 // becomes too big. Then we return the sum of all the nodes inside the state
 // vector.
-fn count(hook: &mut Hook, x: f64) -> f64 {
-  if hook.state.len() == 0 {
-    hook.state.push(0.0);
-    return hook.state[0];
+fn count(state: &mut RingBuf<f64>) -> f64 {
+  if state.len() == 0 {
+    state.push_back(0.0);
+    return state[0];
   }
 
-  hook.state[0] += 1.0;
+  state[0] += 1.0;
 
-  return hook.state[0];
+  return state[0];
 }
 
-fn sum(hook: &mut Hook, x: f64) -> f64 {
-  if hook.state.len() == 0 {
-    hook.state.push(x);
-    return hook.state[0];
+fn sum(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
+  if state.len() < window {
+    state.push_back(x);
+  } else {
+    state.pop_front();
+    state.push_back(x);
   }
 
-  hook.state[0] += x;
 
-  return hook.state[0];
+  let mut total = 0.0;
+  for e in state.iter() {
+    total += *e;
+  }
+  return total;
+}
+
+// Standard Deviation through sampling (not population)
+fn standard_deviation(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
+  if state.len() < window {
+    state.push_back(x);
+  } else {
+    state.pop_front();
+    state.push_back(x);
+  }
+
+  let mut sum = 0.0;
+  for e in state.iter() {
+    sum += *e;
+  }
+
+  let size: f64 = state.len() as f64;
+  let mean = sum / size;
+
+  sum = 0.0;
+  for e in state.iter() {
+    sum += (*e - mean).powi(2);
+  }
+
+  return (sum / (size - 1.0)).sqrt();
+}
+
+// Variance through sampling (not population)
+fn variance(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
+  if state.len() < window {
+    state.push_back(x);
+  } else {
+    state.pop_front();
+    state.push_back(x);
+  }
+
+  let mut sum = 0.0;
+  for e in state.iter() {
+    sum += *e;
+  }
+
+  let size: f64 = state.len() as f64;
+  let mean = sum / size;
+
+  sum = 0.0;
+  for e in state.iter() {
+    sum += (*e - mean).powi(2);
+  }
+
+  return sum / (size - 1.0);
 }
 
 fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
@@ -193,14 +282,19 @@ fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
     Some(buffer) => {
       for e in buffer.iter_mut() {
         if e.is_connected {
+          // Not sure of what I'm doing anymore
+          let ref mut state = e.state;
+
           let value = match e.command.as_slice() {
             "new_value" => x,
-            "min"       => min(e, x),
-            "max"       => max(e, x),
-            // "mean"       => mean(e, x),
-            "sum"       => sum(e, x),
-            "count"       => count(e, x),
-            _ => 0.0,
+            "min"       => min(state, x, e.window),
+            "max"       => max(state, x, e.window),
+            "mean"       => mean(state, x, e.window),
+            "sum"       => sum(state, x, e.window),
+            "variance"       => variance(state, x, e.window),
+            "standard_deviation"       => standard_deviation(state, x, e.window),
+            "count"       => count(state),
+            _ => x,
           };
 
           match e.channel.write(format!("{}", value).as_bytes()) {
@@ -289,11 +383,16 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
 }
 
 fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
-  let req = read_str(&mut stream);
+  let req: String = read_str(&mut stream);
 
   let v: Vec<&str> = req.as_slice().split_str(":").collect();
 
-  let command = v[1].to_string();
+  let command_set: Vec<&str> = v[1].as_slice().split_str(" ").collect();
+  let window: uint = match from_str(command_set[1]) {
+    Some(x) => x,
+    None => 0,
+  };
+
 
   let namespaces: String = v[0].to_string();
   // let splitted_namespace: Vec<&str> = v[0].split_str(".").collect();
@@ -307,8 +406,9 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
       list.push_back(Hook {
         channel: stream.clone(),
         is_connected: true,
-        state: Vec::new(),
-        command: command.clone()
+        state: RingBuf::new(),
+        command: command_set[2].to_string(),
+        window: window
       });
     }
     None => println!("Sorry, the sensor `{}` isn't available.", namespaces)

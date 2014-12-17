@@ -7,7 +7,7 @@ var client = new net.Socket();
 var sensorName = 'sensor1';
 
 var namespace = 'house.floor1.room1.' + sensorName;
-var command = 'count';
+var command = 'new 5 variance';
 client.connect(PORT, HOST, function() {
   console.log('CONNECTED TO: ' + HOST + ':' + PORT);
   writeString(client, namespace + ':' + command);
