@@ -27,7 +27,7 @@ fn main() {
   send_str(namespace, &mut socket).unwrap();
 
   let v: Vec<f64> = rng.gen_iter::<f64>().take(250).collect();
-  // Iterate 100000 times (long enough to test out things)
+
   for i in v.iter() {
     // Start a one second timer
     let oneshot: Receiver<()> = timer.oneshot(interval);

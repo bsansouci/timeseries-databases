@@ -17,6 +17,8 @@ use postgres::{Connection, SslMode};
 use postgres::types::array::{ArrayBase};
 
 use std::num::Float;
+use std::f64::MAX_VALUE;
+use std::f64::MIN_VALUE;
 
 struct SensorPacket {
   value: f64,
@@ -126,65 +128,27 @@ fn add_sensor(all_hooks: &Eric, name: String) -> bool {
   return true;
 }
 
-fn min(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
-  if state.len() < window {
-    let mut min: f64 = x;
-    for e in state.iter() {
-      if *e < min {
-        min = *e;
-      }
-    }
-
-    state.push_back(x);
-    return min;
-  }
-
-  let mut min = x;
+fn min(state: &mut RingBuf<f64>) -> f64 {
+  let mut min = MAX_VALUE;
   for e in state.iter() {
     if *e < min {
       min = *e;
     }
   }
-
-  state.pop_front();
-  state.push_back(x);
   return min;
 }
 
-fn max(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
-  if state.len() < window {
-    let mut max: f64 = x;
-    for e in state.iter() {
-      if *e > max {
-        max = *e;
-      }
-    }
-
-    state.push_back(x);
-    return max;
-  }
-
-  let mut max = x;
+fn max(state: &mut RingBuf<f64>) -> f64 {
+  let mut max = MIN_VALUE;
   for e in state.iter() {
     if *e > max {
       max = *e;
     }
   }
-
-  state.pop_front();
-  state.push_back(x);
   return max;
 }
 
-fn mean(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
-  if state.len() < window {
-    state.push_back(x);
-  } else {
-    state.pop_front();
-    state.push_back(x);
-  }
-
-
+fn mean(state: &mut RingBuf<f64>) -> f64 {
   let mut sum = 0.0;
   for e in state.iter() {
     sum += *e;
@@ -209,15 +173,7 @@ fn count(state: &mut RingBuf<f64>) -> f64 {
   return state[0];
 }
 
-fn sum(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
-  if state.len() < window {
-    state.push_back(x);
-  } else {
-    state.pop_front();
-    state.push_back(x);
-  }
-
-
+fn sum(state: &mut RingBuf<f64>) -> f64 {
   let mut total = 0.0;
   for e in state.iter() {
     total += *e;
@@ -226,14 +182,7 @@ fn sum(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
 }
 
 // Standard Deviation through sampling (not population)
-fn standard_deviation(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
-  if state.len() < window {
-    state.push_back(x);
-  } else {
-    state.pop_front();
-    state.push_back(x);
-  }
-
+fn standard_deviation(state: &mut RingBuf<f64>) -> f64 {
   let mut sum = 0.0;
   for e in state.iter() {
     sum += *e;
@@ -251,14 +200,7 @@ fn standard_deviation(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
 }
 
 // Variance through sampling (not population)
-fn variance(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
-  if state.len() < window {
-    state.push_back(x);
-  } else {
-    state.pop_front();
-    state.push_back(x);
-  }
-
+fn variance(state: &mut RingBuf<f64>) -> f64 {
   let mut sum = 0.0;
   for e in state.iter() {
     sum += *e;
@@ -269,10 +211,41 @@ fn variance(state: &mut RingBuf<f64>, x: f64, window: uint) -> f64 {
 
   sum = 0.0;
   for e in state.iter() {
-    sum += (*e - mean).powi(2);
+    let tmp = (*e - mean);
+    sum += tmp * tmp;
   }
 
   return sum / (size - 1.0);
+}
+
+// Simple linear regression implementation that returns the slope
+// for y = ax + b (returns a)
+fn slope(state: &mut RingBuf<f64>) -> f64 {
+  let mut sumXY = 0.0;
+  let mut sumX = 0.0;
+  let mut sumY = 0.0;
+  let mut sum2X = 0.0;
+  let mut x = 0.0;
+  for y in state.iter() {
+    sumX += x;
+    sumY += *y;
+    sum2X += x * x;
+    sumXY += *y * x;
+    x += 1.0;
+  }
+
+  let N = state.len() as f64;
+  let slope = (N * sumXY - sumX * sumY) / (N * sum2X - sumX * sumX);
+  return slope;
+}
+
+fn add_to_state(state: &mut RingBuf<f64>, x: f64, window: uint) {
+  if state.len() < window {
+    state.push_back(x);
+  } else {
+    state.pop_front();
+    state.push_back(x);
+  }
 }
 
 fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
@@ -285,15 +258,19 @@ fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
           // Not sure of what I'm doing anymore
           let ref mut state = e.state;
 
+          // modify the state
+          add_to_state(state, x, e.window);
+
           let value = match e.command.as_slice() {
-            "new_value" => x,
-            "min"       => min(state, x, e.window),
-            "max"       => max(state, x, e.window),
-            "mean"       => mean(state, x, e.window),
-            "sum"       => sum(state, x, e.window),
-            "variance"       => variance(state, x, e.window),
-            "standard_deviation"       => standard_deviation(state, x, e.window),
-            "count"       => count(state),
+            "new_value"          => x,
+            "min"                => min(state),
+            "max"                => max(state),
+            "mean"               => mean(state),
+            "sum"                => sum(state),
+            "variance"           => variance(state),
+            "standard_deviation" => standard_deviation(state),
+            "count"              => count(state),
+            "slope"              => slope(state),
             _ => x,
           };
 
