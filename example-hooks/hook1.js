@@ -4,10 +4,10 @@ var HOST = '127.0.0.1';
 var PORT = 8001;
 
 var client = new net.Socket();
-var sensorName = 'sensor1';
+var sensorName = '*';
 
 var namespace = 'house.floor1.room1.' + sensorName;
-var command = 'new 5 slope';
+var command = 'new 5 new_value';
 client.connect(PORT, HOST, function() {
   console.log('CONNECTED TO: ' + HOST + ':' + PORT);
   writeString(client, namespace + ':' + command);

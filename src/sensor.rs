@@ -15,7 +15,6 @@ fn main() {
     dbname = args[1].clone();
   }
 
-
   let namespace: &str = dbname.as_slice();
 
   let interval = Duration::milliseconds(1000);

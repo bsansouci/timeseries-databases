@@ -20,6 +20,8 @@ use std::num::Float;
 use std::f64::MAX_VALUE;
 use std::f64::MIN_VALUE;
 
+type Eric = Arc<Mutex<HashMap<String, (RingBuf<Hook<TcpStream>>, RingBuf<Hook<Sender<f64>>>)>>>;
+
 struct SensorPacket {
   value: f64,
   name: String,
@@ -32,15 +34,14 @@ struct NamespacePacket {
   is_sensor: bool
 }
 
-struct Hook {
-  channel: TcpStream,
+struct Hook<T> {
+  channel: T,
   is_connected: bool,
   state: RingBuf<f64>,
   command: String,
-  window: uint
+  window: uint,
+  namespace: String
 }
-
-type Eric = Arc<Mutex<HashMap<String, RingBuf<Hook>>>>;
 
 fn read_str(stream: &mut TcpStream) -> String {
   let length = stream.read_be_u32().unwrap();
@@ -124,7 +125,7 @@ fn add_sensor(all_hooks: &Eric, name: String) -> bool {
     return false;
   }
 
-  w.insert(name, RingBuf::new());
+  w.insert(name, (RingBuf::new(), RingBuf::new()));
   return true;
 }
 
@@ -211,7 +212,7 @@ fn variance(state: &mut RingBuf<f64>) -> f64 {
 
   sum = 0.0;
   for e in state.iter() {
-    let tmp = (*e - mean);
+    let tmp = *e - mean;
     sum += tmp * tmp;
   }
 
@@ -221,21 +222,21 @@ fn variance(state: &mut RingBuf<f64>) -> f64 {
 // Simple linear regression implementation that returns the slope
 // for y = ax + b (returns a)
 fn slope(state: &mut RingBuf<f64>) -> f64 {
-  let mut sumXY = 0.0;
-  let mut sumX = 0.0;
-  let mut sumY = 0.0;
-  let mut sum2X = 0.0;
+  let mut sum_xy = 0.0;
+  let mut sum_x = 0.0;
+  let mut sum_y = 0.0;
+  let mut sum_2x = 0.0;
   let mut x = 0.0;
   for y in state.iter() {
-    sumX += x;
-    sumY += *y;
-    sum2X += x * x;
-    sumXY += *y * x;
+    sum_x += x;
+    sum_y += *y;
+    sum_2x += x * x;
+    sum_xy += *y * x;
     x += 1.0;
   }
 
-  let N = state.len() as f64;
-  let slope = (N * sumXY - sumX * sumY) / (N * sum2X - sumX * sumX);
+  let n = state.len() as f64;
+  let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_2x - sum_x * sum_x);
   return slope;
 }
 
@@ -253,7 +254,7 @@ fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
 
   match w.get_mut(&name) {
     Some(buffer) => {
-      for e in buffer.iter_mut() {
+      for e in buffer.mut0().iter_mut() {
         if e.is_connected {
           // Not sure of what I'm doing anymore
           let ref mut state = e.state;
@@ -283,6 +284,37 @@ fn send_to_all_hooks_f64(all_hooks: &Eric, name: String, x: f64) {
           }
         }
       }
+
+      for e in buffer.mut1().iter_mut() {
+        if e.is_connected {
+          // Not sure of what I'm doing anymore
+          let ref mut state = e.state;
+
+          // modify the state
+          add_to_state(state, x, e.window);
+
+          let value = match e.command.as_slice() {
+            "new_value"          => x,
+            "min"                => min(state),
+            "max"                => max(state),
+            "mean"               => mean(state),
+            "sum"                => sum(state),
+            "variance"           => variance(state),
+            "standard_deviation" => standard_deviation(state),
+            "count"              => count(state),
+            "slope"              => slope(state),
+            _ => x,
+          };
+
+          match e.channel.send_opt(value) {
+            Ok(_) => (),
+            Err(err) => {
+              println!("Hook probably disconnected, error: {}", err);
+              e.is_connected = false;
+            }
+          }
+        }
+      }
     }
     None => println!("Problem here.")
   }
@@ -294,7 +326,7 @@ fn send_to_all_hooks_str(all_hooks: &Eric, name: String, message: String) {
 
   match w.get_mut(&name) {
     Some(buffer) => {
-      for e in buffer.iter_mut() {
+      for e in buffer.mut0().iter_mut() {
         if e.is_connected {
           match e.channel.write(m) {
             Ok(_) => (),
@@ -331,7 +363,7 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
     let req = stream.read_be_f64();
     match req {
       Ok(x) => {
-        println!("HANDLE_SENSOR got {}", x);
+        println!("{}:{}", namespace, x);
         // Save the data in the DB
         // db.send(SensorPacket {
         //   value: x,
@@ -359,6 +391,32 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
   drop(stream);
 }
 
+
+fn handle_intermediary(mut all_receivers: Vec<Hook<Receiver<f64>>>, mut hook: TcpStream) {
+  let mut is_connected = true;
+  loop {
+    if !is_connected {
+      println!("Destroying intermediary");
+      return;
+    }
+    // timer::sleep(Duration::seconds(1));
+    for r in all_receivers.iter_mut() {
+      match r.channel.try_recv() {
+        Ok(x) => {
+          match hook.write(format!("{}:{}", r.namespace.clone(), x).as_bytes()) {
+            Ok(_) => (),
+            Err(err) => {
+              println!("Hook probably disconnected, error: {}", err);
+              is_connected = false;
+            }
+          }
+        }
+        Err(_) => ()
+      }
+    }
+  }
+}
+
 fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
   let req: String = read_str(&mut stream);
 
@@ -371,24 +429,70 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
   };
 
 
-  let namespaces: String = v[0].to_string();
-  // let splitted_namespace: Vec<&str> = v[0].split_str(".").collect();
-  // let wanted_sensor = namespaces[namespaces.len() - 1].to_string();
+  let namespace: String = v[0].to_string();
+  let splitted_namespace: Vec<&str> = v[0].split_str(".").collect();
+  let wanted_sensor = splitted_namespace[splitted_namespace.len() - 1].to_string();
 
   let mut unlocked_map = all_hooks.lock();
+  if wanted_sensor == "*" {
+    println!("Wants all inside {}", namespace);
+    let mut namespace_without_star = splitted_namespace.clone();
+    namespace_without_star.pop();
 
-  match unlocked_map.get_mut(&namespaces) {
-    Some(list) => {
-      println!("New hook for sensor `{}`", namespaces);
-      list.push_back(Hook {
-        channel: stream.clone(),
-        is_connected: true,
-        state: RingBuf::new(),
-        command: command_set[2].to_string(),
-        window: window
-      });
+    let mut list: Vec<Hook<Receiver<f64>>> = Vec::new();
+    for (key, sensor) in unlocked_map.iter_mut() {
+      let names: Vec<&str> = key.as_slice().split_str(".").collect();
+      let mut i = 0;
+      let mut all_good = true;
+
+      for n in namespace_without_star.iter() {
+        if *n != names[i] || i >= names.len() {
+          all_good = false;
+          break;
+        }
+        i += 1;
+      }
+
+      if all_good {
+        let (sender, receiver): (Sender<f64>, Receiver<f64>) = channel();
+        list.push(Hook {
+          channel: receiver,
+          is_connected: true,
+          state: RingBuf::new(),
+          command: command_set[2].to_string(),
+          window: window,
+          namespace: key.clone()
+        });
+
+        sensor.mut1().push_back(Hook {
+          channel: sender,
+          is_connected: true,
+          state: RingBuf::new(),
+          command: command_set[2].to_string(),
+          window: window,
+          namespace: key.clone()
+        });
+      }
     }
-    None => println!("Sorry, the sensor `{}` isn't available.", namespaces)
+
+    spawn(proc() {
+      handle_intermediary(list, stream.clone());
+    });
+  } else {
+    match unlocked_map.get_mut(&namespace) {
+      Some(tuple) => {
+        println!("New hook for sensor `{}`", namespace);
+        tuple.mut0().push_back(Hook {
+          channel: stream.clone(),
+          is_connected: true,
+          state: RingBuf::new(),
+          command: command_set[2].to_string(),
+          window: window,
+          namespace: namespace.clone()
+        });
+      }
+      None => println!("Sorry, the sensor `{}` isn't available.", namespace)
+    }
   }
 }
 
@@ -472,8 +576,10 @@ fn main() {
       timer::sleep(Duration::seconds(10));
       let mut w = all_hooks_cleanup.lock();
       println!("Cleaning up the disconnected hooks...");
-      for (_, e) in w.iter_mut() {
+      for (_, tuple) in w.iter_mut() {
         let mut i = 0;
+
+        let ref mut e = tuple.mut0();
         let length = e.len();
         while i < length {
           if !e[i].is_connected {
