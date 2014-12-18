@@ -1,17 +1,20 @@
 timeseries-databases
 ====================
 
+This won't run on the latest compiler because they introduced new concepts that broke one dependency of rust-postgres.
+
 Research project
 
 For this to work you'll need a postgreSQL database running on port 5432 with a db called "local", a user called "root" and a password "password".
 
 Cargo isn't fully set up yet.
 
-# Easy install - please don't explain just give me one-liner install
+# PDEJGMOLI - Please Don't Explain Just Give Me a One-Liner Install
 Simply run
 ```bash
 git clone https://github.com/bsansouci/timeseries-databases.git && 
 curl -s https://static.rust-lang.org/rustup.sh | sudo sh &&
+cd timeseries-databases &&
 cargo run
 ```
 
