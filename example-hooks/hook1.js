@@ -3,8 +3,7 @@ var net = require('net');
 var HOST = '127.0.0.1';
 var PORT = 8001;
 
-var sensorName = '*';
-var namespace = 'house.floor1.room1.' + sensorName;
+var namespace = 'house1.firstfloor.*';
 var command = 'new 5 mean';
 var client = new net.Socket();
 
@@ -13,18 +12,23 @@ client.connect(PORT, HOST, function() {
   writeString(client, namespace + ':' + command);
 });
 
-client.on('data', function(data) {
-  var str = data.toString();
-  var splitStr = str.split(":");
-  console.log("latency", Date.now() - parseInt(splitStr[0]), "sensor:", splitStr[1], "val", parseFloat(splitStr[2]));
-  // console.log('DATA:', data.toString());
-  processData(data.toString());
-});
+client.on('data', middleware(function(time, namespace, value) {
+  console.log("latency", Date.now() - time, "sensor:", namespace, "val", value);
+}));
 
 client.on('close', function() {
   console.log('Connection closed');
   client.destroy();
 });
+
+function middleware(f) {
+  return function(data) {
+    var str = data.toString();
+    processData(data);
+    var splitStr = str.split(":");
+    return f(parseInt(splitStr[0]), splitStr[1], parseFloat(splitStr[2]));
+  };
+}
 
 function processData(data) {
   if(data === "closed") {

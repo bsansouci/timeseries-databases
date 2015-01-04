@@ -19,7 +19,7 @@ fn main() {
 
   let interval = Duration::milliseconds(1000);
   let mut timer = Timer::new().unwrap();
-  let mut rng = rand::task_rng();
+  let mut rng = rand::thread_rng();
   let two_pi = 6.28318530718;
 
   let mut socket: TcpStream = TcpStream::connect("127.0.0.1:8000").unwrap();
@@ -29,11 +29,11 @@ fn main() {
 
   for i in v.iter() {
     // Start a one second timer
-    let oneshot: Receiver<()> = timer.oneshot(interval);
+    let oneshot = timer.oneshot(interval);
     println!("Wait {} ms...", interval.num_milliseconds());
 
     // Block the task until notification arrives (aka the timer is done)
-    oneshot.recv();
+    oneshot.recv().unwrap();
 
     // Generate a random number (alternates between -40 and 40 slowly)
     let mid: f64 = (*i / two_pi).sin();
@@ -54,6 +54,7 @@ fn main() {
 }
 
 fn send_str(string: &str, socket: &mut TcpStream) -> IoResult<()> {
-  try!(socket.write_be_u32(string.len().to_u32().unwrap()));
+  let u32_length = string.len() as u32;
+  try!(socket.write_be_u32(u32_length));
   socket.write(string.as_bytes())
 }

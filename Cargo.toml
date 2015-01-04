@@ -5,5 +5,5 @@ version = "0.0.1"
 authors = ["Benjamin San Souci <benjamin.sansouci@gmail.com>"]
 
 [dependencies]
-postgres = "0.2"
-time = "0.1"
+postgres = "*"
+time = "*"

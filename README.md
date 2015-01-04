@@ -12,13 +12,13 @@ Cargo isn't fully set up yet.
 # PDEJGMOLI - Please Don't Explain Just Give Me a One-Liner Install
 Simply run
 ```bash
-git clone https://github.com/bsansouci/timeseries-databases.git && 
 curl -s https://static.rust-lang.org/rustup.sh | sudo sh &&
+git clone https://github.com/bsansouci/timeseries-databases.git && 
 cd timeseries-databases &&
 cargo run
 ```
 
-# How to build
+# How to Build/Run
 If you already have the Rust compiler installed, you can build and run the main server simply by running
 ```bash
 cargo run
