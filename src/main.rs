@@ -410,7 +410,7 @@ fn handle_intermediary(mut all_receivers: Vec<Hook<Receiver<f64>>>, mut hook: Tc
       match r.channel.try_recv() {
         Ok(x) => {
           let t = time::get_time();
-          let time_stamp = t.sec * 1000 + t.nsec as i64 / 1000000;
+          let time_stamp = t.sec * 1000000 + t.nsec as i64 / 1000;
           match hook.write(format!("{}:{}:{}", time_stamp, r.namespace.clone(), x).as_bytes()) {
             Ok(_) => (),
             Err(err) => {

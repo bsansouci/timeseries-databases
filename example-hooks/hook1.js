@@ -1,6 +1,6 @@
 var net = require('net');
 
-var HOST = '127.0.0.1';
+var HOST = '104.236.160.214';
 var PORT = 8001;
 
 var namespace = 'house1.firstfloor.*';
