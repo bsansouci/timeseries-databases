@@ -21,7 +21,6 @@ use time::Timespec;
 use std::io::timer;
 use std::time::Duration;
 
-
 use postgres::{Connection, SslMode};
 
 
@@ -436,7 +435,7 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
     None => 0,
   };
 
-
+f
   let namespace: String = v[0].to_string();
   let splitted_namespace: Vec<&str> = v[0].split_str(".").collect();
   let wanted_sensor = splitted_namespace[splitted_namespace.len() - 1].to_string();

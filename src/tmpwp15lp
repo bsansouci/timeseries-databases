@@ -5,7 +5,7 @@ use std::rand::Rng;
 use std::io::Timer;
 use std::time::duration::Duration;
 use std::os;
-use std::num::Float;
+use std::num::F;
 
 fn main() {
   let mut dbname = "house.floor1.room1.sensor1".to_string();

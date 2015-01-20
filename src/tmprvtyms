@@ -21,7 +21,6 @@ use time::Timespec;
 use std::io::timer;
 use std::time::Duration;
 
-
 use postgres::{Connection, SslMode};
 
 
@@ -51,9 +50,11 @@ struct Hook<T> {
 fn read_str(stream: &mut TcpStream) -> String {
   let length = stream.read_be_u32().unwrap();
   let usize_length = length as usize;
+  let mut t: Vec<u8> = Vec::with_capacity(usize_length);
+  let tmp: &mut [u8] = t.as_mut_slice();
 
-  let mut buff: Vec<u8> = stream.read_exact(usize_length).unwrap();
-  return str::from_utf8(buff.as_mut_slice()).unwrap().to_string();
+  stream.read_e(tmp).unwrap();
+  return str::from_utf8(tmp).unwrap().to_string();
 }
 
 // fn create_namespace(ns: Sender<NamespacePacket>, namespace: &Vec<&str>) {

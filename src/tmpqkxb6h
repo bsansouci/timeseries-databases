@@ -90,8 +90,8 @@ fn read_str(stream: &mut TcpStream) -> String {
 // fn handle_hook(mut stream: TcpStream, sensor: Queue<SensorPacket>) {
 //   let req = read_str(&mut stream);
 
-//   let v: Vec<&str> = req.as_slice().split_str(":").collect();
-//   let split: Vec<&str> = v[0].split_str(".").collect();
+//   let v: Vec<&str> = req.as_slice().split_s(":").collect();
+//   let split: Vec<&str> = v[0].split_s(".").collect();
 //   let hook_name = split[split.len() - 1];
 //   println!("New hook with name {}", hook_name);
 //   loop {
@@ -349,7 +349,7 @@ fn send_to_all_hooks_str(all_hooks: &Eric, name: String, message: String) {
 fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<NamespacePacket>, all_hooks: Eric) {
   let namespace: String = read_str(&mut stream);
 
-  // let str_split: Vec<&str> = namespace.as_slice().split_str(".").collect();
+  // let str_split: Vec<&str> = namespace.as_slice().split_s(".").collect();
   // create_namespace(ns, &str_split);
   // let sensor_name: String = str_split[str_split.len() - 1].to_string();
 
@@ -428,9 +428,9 @@ fn handle_intermediary(mut all_receivers: Vec<Hook<Receiver<f64>>>, mut hook: Tc
 fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
   let req: String = read_str(&mut stream);
 
-  let v: Vec<&str> = req.as_slice().split_str(":").collect();
+  let v: Vec<&str> = req.as_slice().split_s(":").collect();
 
-  let command_set: Vec<&str> = v[1].as_slice().split_str(" ").collect();
+  let command_set: Vec<&str> = v[1].as_slice().split_s(" ").collect();
   let window: usize = match FromStr::from_str(command_set[1]) {
     Some(x) => x,
     None => 0,
@@ -438,7 +438,7 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
 
 
   let namespace: String = v[0].to_string();
-  let splitted_namespace: Vec<&str> = v[0].split_str(".").collect();
+  let splitted_namespace: Vec<&str> = v[0].split_s(".").collect();
   let wanted_sensor = splitted_namespace[splitted_namespace.len() - 1].to_string();
 
   let mut unlocked_map = all_hooks.lock().unwrap();
@@ -449,7 +449,7 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
 
     let mut list: Vec<Hook<Receiver<f64>>> = Vec::new();
     for (key, sensor) in unlocked_map.iter_mut() {
-      let names: Vec<&str> = key.as_slice().split_str(".").collect();
+      let names: Vec<&str> = key.as_slice().split_s(".").collect();
       let mut i = 0;
       let mut all_good = true;
 

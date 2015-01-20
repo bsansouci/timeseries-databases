@@ -4,7 +4,7 @@ var HOST = '127.0.0.1';
 var PORT = 8001;
 
 var namespace = 'house1.firstfloor.*';
-var command = 'new 5 mean';
+var command = 'new 5 value';
 var client = new net.Socket();
 
 client.connect(PORT, HOST, function() {
