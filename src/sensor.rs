@@ -1,8 +1,8 @@
-use std::io::TcpStream;
-use std::io::IoResult;
+use std::old_io::TcpStream;
+use std::old_io::IoResult;
 use std::rand;
 use std::rand::Rng;
-use std::io::Timer;
+use std::old_io::Timer;
 use std::time::duration::Duration;
 use std::os;
 use std::num::Float;
@@ -22,7 +22,7 @@ fn main() {
   let mut rng = rand::thread_rng();
   let two_pi = 6.28318530718;
 
-  let mut socket: TcpStream = TcpStream::connect("104.236.160.214:8000").unwrap();
+  let mut socket: TcpStream = TcpStream::connect("localhost:8000").unwrap();
   send_str(namespace, &mut socket).unwrap();
 
   let v: Vec<f64> = rng.gen_iter::<f64>().take(250).collect();

@@ -9,8 +9,8 @@ use std::str::FromStr;
 use std::f64::MAX_VALUE;
 use std::f64::MIN_VALUE;
 
-use std::io::{Acceptor, Listener};
-use std::io::{TcpListener, TcpStream};
+use std::old_io::{Acceptor, Listener};
+use std::old_io::{TcpListener, TcpStream};
 
 use std::collections::HashMap;
 use std::collections::RingBuf;
@@ -18,7 +18,7 @@ use std::sync::{Mutex, Arc};
 use std::sync::mpsc::{Sender, Receiver, channel};
 
 use time::Timespec;
-use std::io::timer;
+use std::old_io::timer;
 use std::time::Duration;
 
 
@@ -366,7 +366,7 @@ fn handle_sensor(mut stream: TcpStream, db: Sender<SensorPacket>, ns: Sender<Nam
   loop {
     let req = stream.read_be_f64();
     let t = time::get_time();
-    let time_stamp = t.sec * 1000000 + t.nsec as i64 / 1000;
+    let time_stamp = t.sec * 1000 + t.nsec as i64 / 1000000;
     match req {
       Ok(x) => {
         println!("{}:{}:{}", time_stamp, namespace, x);
@@ -410,7 +410,7 @@ fn handle_intermediary(mut all_receivers: Vec<Hook<Receiver<f64>>>, mut hook: Tc
       match r.channel.try_recv() {
         Ok(x) => {
           let t = time::get_time();
-          let time_stamp = t.sec * 1000000 + t.nsec as i64 / 1000;
+          let time_stamp = t.sec * 1000 + t.nsec as i64 / 1000000;
           match hook.write(format!("{}:{}:{}", time_stamp, r.namespace.clone(), x).as_bytes()) {
             Ok(_) => (),
             Err(err) => {
@@ -432,8 +432,8 @@ fn handle_hook(mut stream: TcpStream, all_hooks: &Eric) {
 
   let command_set: Vec<&str> = v[1].as_slice().split_str(" ").collect();
   let window: usize = match FromStr::from_str(command_set[1]) {
-    Some(x) => x,
-    None => 0,
+    Ok(x) => x,
+    Err(e) => 0,
   };
 
 
@@ -556,7 +556,7 @@ fn main() {
 
   let all_hooks_sensorside = all_hooks_hookside.clone();
   Thread::spawn(move || {
-    let sensor_listener = TcpListener::bind("127.0.0.1:8000");
+    let sensor_listener = TcpListener::bind("localhost:8000");
     let mut sensors = sensor_listener.listen();
     // accept connections and process them, spawning a new tasks for each one
     for stream in sensors.incoming() {
@@ -603,7 +603,7 @@ fn main() {
     }
   });
 
-  let hook_listener = TcpListener::bind("127.0.0.1:8001");
+  let hook_listener = TcpListener::bind("localhost:8001");
   let mut hook = hook_listener.listen();
   // accept connections and process them, spawning a new tasks for each one
   for stream in hook.incoming() {
